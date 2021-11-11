@@ -4,17 +4,8 @@ import cn.hutool.core.io.IORuntimeException;
 import cn.hutool.core.io.file.FileReader;
 import cn.hutool.core.lang.TypeReference;
 import cn.hutool.core.map.MapWrapper;
-import cn.hutool.core.util.ArrayUtil;
-import cn.hutool.core.util.ClassUtil;
-import cn.hutool.core.util.HexUtil;
-import cn.hutool.core.util.ObjectUtil;
-import cn.hutool.core.util.StrUtil;
-import cn.hutool.core.util.TypeUtil;
-import cn.hutool.json.serialize.GlobalSerializeMapping;
-import cn.hutool.json.serialize.JSONArraySerializer;
-import cn.hutool.json.serialize.JSONDeserializer;
-import cn.hutool.json.serialize.JSONObjectSerializer;
-import cn.hutool.json.serialize.JSONSerializer;
+import cn.hutool.core.util.*;
+import cn.hutool.json.serialize.*;
 
 import java.io.File;
 import java.io.IOException;
@@ -24,11 +15,10 @@ import java.lang.reflect.Type;
 import java.nio.charset.Charset;
 import java.sql.SQLException;
 import java.time.temporal.TemporalAccessor;
-import java.util.Calendar;
-import java.util.Date;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+
+import static cn.hutool.core.text.CharSequenceUtil.*;
+import static cn.hutool.core.text.StrPool.C_SPACE;
 
 /**
  * JSON工具类
@@ -36,6 +26,10 @@ import java.util.Map;
  * @author Looly
  */
 public class JSONUtil {
+
+	private JSONUtil(){
+		throw new IllegalStateException("Util Class");
+	}
 
 	// -------------------------------------------------------------------- Pause start
 
@@ -228,7 +222,7 @@ public class JSONUtil {
 		if (obj instanceof JSON) {
 			json = (JSON) obj;
 		} else if (obj instanceof CharSequence) {
-			final String jsonStr = StrUtil.trim((CharSequence) obj);
+			final String jsonStr = trim((CharSequence) obj);
 			json = isJsonArray(jsonStr) ? parseArray(jsonStr, config) : parseObj(jsonStr, config);
 		} else if (obj instanceof MapWrapper) {
 			// MapWrapper实现了Iterable会被当作JSONArray，此处做修正
@@ -371,7 +365,7 @@ public class JSONUtil {
 			return null;
 		}
 		if (obj instanceof CharSequence) {
-			return StrUtil.str((CharSequence) obj);
+			return str((CharSequence) obj);
 		}
 		return toJsonStr(parse(obj, jsonConfig));
 	}
@@ -533,8 +527,8 @@ public class JSONUtil {
 	 * 表达式栗子：
 	 *
 	 * <pre>
-	 * persion
-	 * persion.name
+	 * person
+	 * person.name
 	 * persons[3]
 	 * person.friends[5].name
 	 * </pre>
@@ -558,8 +552,8 @@ public class JSONUtil {
 	 * 表达式栗子：
 	 *
 	 * <pre>
-	 * persion
-	 * persion.name
+	 * person
+	 * person.name
 	 * persons[3]
 	 * person.friends[5].name
 	 * </pre>
@@ -574,7 +568,7 @@ public class JSONUtil {
 	 */
 	@SuppressWarnings("unchecked")
 	public static <T> T getByPath(JSON json, String expression, T defaultValue) {
-		if((null == json || StrUtil.isBlank(expression))){
+		if((null == json || isBlank(expression))){
 			return defaultValue;
 		}
 
@@ -597,8 +591,8 @@ public class JSONUtil {
 	 * 表达式栗子：
 	 *
 	 * <pre>
-	 * persion
-	 * persion.name
+	 * person
+	 * person.name
 	 * persons[3]
 	 * person.friends[5].name
 	 * </pre>
@@ -639,7 +633,7 @@ public class JSONUtil {
 			return quote(string, sw, isWrap).toString();
 		} catch (IOException ignored) {
 			// will never happen - we are writing to a string writer
-			return StrUtil.EMPTY;
+			return EMPTY;
 		}
 	}
 
@@ -670,7 +664,7 @@ public class JSONUtil {
 	 * @since 3.3.1
 	 */
 	public static Writer quote(String str, Writer writer, boolean isWrap) throws IOException {
-		if (StrUtil.isEmpty(str)) {
+		if (isEmpty(str)) {
 			if (isWrap) {
 				writer.write("\"\"");
 			}
@@ -707,7 +701,7 @@ public class JSONUtil {
 	 * @return 转义后的字符串
 	 */
 	public static String escape(String str) {
-		if (StrUtil.isEmpty(str)) {
+		if (isEmpty(str)) {
 			return str;
 		}
 
@@ -730,7 +724,7 @@ public class JSONUtil {
 	 * <li>map =》 JSONObject</li>
 	 * <li>standard property (Double, String, et al) =》 原对象</li>
 	 * <li>来自于java包 =》 字符串</li>
-	 * <li>其它 =》 尝试包装为JSONObject，否则返回{@code null}</li>
+	 * <li>其它 =》 restWrap方法</li>
 	 * </ul>
 	 *
 	 * @param object     被包装的对象
@@ -739,14 +733,15 @@ public class JSONUtil {
 	 */
 	@SuppressWarnings({"rawtypes", "unchecked"})
 	public static Object wrap(Object object, JSONConfig jsonConfig) {
+
 		if (object == null) {
-			return jsonConfig.isIgnoreNullValue() ? null : JSONNull.NULL;
+			return !jsonConfig.isIgnoreNullValue() ? JSONNull.NULL : null;
 		}
-		if (object instanceof JSON //
+		if ((object instanceof JSON) //
 				|| JSONNull.NULL.equals(object) //
-				|| object instanceof JSONString //
-				|| object instanceof CharSequence //
-				|| object instanceof Number //
+				|| (object instanceof JSONString) //
+				|| (object instanceof CharSequence) //
+				|| (object instanceof Number) //
 				|| ObjectUtil.isBasicType(object) //
 		) {
 			return object;
@@ -765,6 +760,21 @@ public class JSONUtil {
 			}
 		}
 
+		return restWrap(object, jsonConfig);
+	}
+
+	/**
+	 * 配合wrap方法使用，提取减少方法Sonarlint认知度
+	 * 在需要的时候包装对象<br>
+	 * 	包装包括：
+	 * 	<li>其它 =》 尝试包装为JSONObject，否则返回{@code null}</li>
+	 * 	</ul>
+	 *
+	 * @param object 被包装的对象
+	 * @param jsonConfig JSON选项
+	 * @return java.lang.Object 包装后的值，null表示此值需被忽略
+	 */
+	public static Object restWrap(Object object,JSONConfig jsonConfig){
 		try {
 			// fix issue#1399@Github
 			if(object instanceof SQLException){
@@ -834,10 +844,10 @@ public class JSONUtil {
 	 * @since 3.3.0
 	 */
 	public static boolean isJsonObj(String str) {
-		if (StrUtil.isBlank(str)) {
+		if (isBlank(str)) {
 			return false;
 		}
-		return StrUtil.isWrap(StrUtil.trim(str), '{', '}');
+		return isWrap(trim(str), '{', '}');
 	}
 
 	/**
@@ -848,10 +858,10 @@ public class JSONUtil {
 	 * @since 3.3.0
 	 */
 	public static boolean isJsonArray(String str) {
-		if (StrUtil.isBlank(str)) {
+		if (isBlank(str)) {
 			return false;
 		}
-		return StrUtil.isWrap(StrUtil.trim(str), '[', ']');
+		return isWrap(trim(str), '[', ']');
 	}
 
 	/**
@@ -940,7 +950,7 @@ public class JSONUtil {
 			case '\r':
 				return "\\r";
 			default:
-				if (c < StrUtil.C_SPACE || //
+				if (c < C_SPACE || //
 						(c >= '\u0080' && c <= '\u00a0') || //
 						(c >= '\u2000' && c <= '\u2010') || //
 						(c >= '\u2028' && c <= '\u202F') || //
